@@ -426,21 +426,19 @@ function processDataAndVerify(data, fileName) {
         orderMoneySum += order.matchedPrice;
     }
     
-    // 表3: SKU销量汇总 (由于现在是整单计价，无法准确拆分单品销售额，只能汇总销量)
+    // 表3: SKU销量汇总 (只需要商品名称，去除尺码区分)
     const skuSummary = [];
     const skuSumMap = {}; 
     data.forEach(row => {
-        const skuKey = `${row['最终商品名称']}|||${row['最终尺码']}`;
+        const skuKey = row['最终商品名称']; // 仅凭商品名称统计
         if (!skuSumMap[skuKey]) skuSumMap[skuKey] = 0;
         skuSumMap[skuKey] += row['解析数量'];
     });
     
     let itemQtySum = 0;
     for(let k in skuSumMap) {
-        const parts = k.split('|||');
         skuSummary.push({
-            '订单商品名称': parts[0],
-            '尺码': parts[1],
+            '订单商品名称': k,
             '总销量': skuSumMap[k]
         });
         itemQtySum += skuSumMap[k];
