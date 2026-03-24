@@ -45,6 +45,19 @@
                     </tbody>
                 </table>
             </div>
+            
+            <!-- 分页控件 -->
+            <div class="pagination-controls" id="pagination-controls" style="display: none;">
+                <button id="prev-page-btn" class="btn btn-small btn-outline" disabled>上一页</button>
+                <span id="page-info" class="page-info">第 1 / 1 页</span>
+                <button id="next-page-btn" class="btn btn-small btn-outline" disabled>下一页</button>
+                <select id="page-size-select" class="page-size-select">
+                    <option value="50">50 条/页</option>
+                    <option value="100">100 条/页</option>
+                    <option value="500">500 条/页</option>
+                    <option value="all">显示全部</option>
+                </select>
+            </div>
         </aside>
 
         <!-- 主内容区 -->

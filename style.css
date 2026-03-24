@@ -141,6 +141,50 @@ td input.price-input[data-field="item"] {
     min-width: 180px; /* 保证名称框够长 */
 }
 
+/* 冲突高亮样式 */
+tr.conflict-row td {
+    background-color: #ffe6e6; /* 冲突行红色背景 */
+    color: #cc0000;
+}
+tr.conflict-row input {
+    background-color: transparent;
+    color: #cc0000;
+}
+tr.conflict-row {
+    position: relative;
+}
+tr.conflict-row td:last-child::after {
+    content: "⚠️ 冲突";
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8rem;
+    color: #cc0000;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+/* 分页控件 */
+.pagination-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 15px;
+    margin-top: 10px;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.9rem;
+}
+.page-info {
+    color: var(--text-muted);
+}
+.page-size-select {
+    padding: 2px 5px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 0.85rem;
+}
+
 /* Main Content */
 .main-content {
     flex-grow: 1;
