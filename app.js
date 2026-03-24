@@ -1,20 +1,11 @@
-// --- 初始化默认价格字典 ---
-const defaultPriceData = [
-    { item: '4060', size: 'XL', tiers: [ {qty: 5, price: 35.0}, {qty: 3, price: 45.0}, {qty: 1, price: 55.0} ] },
-    { item: '4060', size: 'M', tiers: [ {qty: 5, price: 30.0}, {qty: 3, price: 40.0}, {qty: 1, price: 50.0} ] },
-    { item: 'Recznik', size: '默认', tiers: [ {qty: 2, price: 12.0}, {qty: 1, price: 15.0} ] },
-    { item: '3040', size: 'XL', tiers: [ {qty: 1, price: 40.0} ] },
-    { item: '3040', size: 'M', tiers: [ {qty: 1, price: 35.0} ] },
-    { item: '6090', size: '默认', tiers: [ {qty: 1, price: 35.0} ] },
-    { item: '洗衣袋', size: '默认', tiers: [ {qty: 1, price: 30.0} ] },
-    { item: '三色抹布', size: '默认', tiers: [ {qty: 1, price: 20.0} ] },
-    { item: 'Ręcznik łazienkowy BezKropli', size: '默认', tiers: [ {qty: 1, price: 10.0} ] },
-    { item: 'Ceramika w Sprayu', size: '默认', tiers: [ {qty: 1, price: 10.0} ] },
-    { item: '__kaching_bundles:eyJkZWFsIjoiS3JSdyIsIm1haW4iOnRydWUsImlkIjoiSDgxZiJ9', size: 'XL', tiers: [ {qty: 5, price: 35.0}, {qty: 3, price: 45.0}, {qty: 1, price: 55.0} ] },
-    { item: '__kaching_bundles:eyJkZWFsIjoiS3JSdyIsIm1haW4iOnRydWUsImlkIjoiSDgxZiJ9', size: 'M', tiers: [ {qty: 5, price: 30.0}, {qty: 3, price: 40.0}, {qty: 1, price: 50.0} ] }
+// --- 初始化默认规则表 ---
+const defaultRuleData = [
+    { country: 'poland', items: '4060*3', channel: '自提客选', price: 11.0 },
+    { country: 'polan', items: '4060*3, 3040*2', channel: '!自提客选', price: 25.0 },
+    { country: 'poland', items: '4060*5, 3040*1', channel: '', price: 30.0 }
 ];
 
-let priceConfig = [];
+let orderRuleConfig = [];
 let pendingFiles = [];
 let processedZips = null;
 
@@ -36,21 +27,19 @@ const tableBody = document.getElementById('price-table-body');
 
 function renderTable() {
     tableBody.innerHTML = '';
-    priceConfig.forEach((row, rowIndex) => {
-        row.tiers.forEach((tier, tierIndex) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td><input type="text" value="${row.item}" data-row="${rowIndex}" data-field="item" class="price-input"></td>
-                <td><input type="text" value="${row.size}" data-row="${rowIndex}" data-field="size" class="price-input" style="width: 50px;"></td>
-                <td><input type="number" min="1" value="${tier.qty}" data-row="${rowIndex}" data-tier="${tierIndex}" data-field="qty" class="price-input" style="width: 60px;"></td>
-                <td><input type="number" step="0.01" min="0" value="${tier.price}" data-row="${rowIndex}" data-tier="${tierIndex}" data-field="price" class="price-input" style="width: 70px;"></td>
-                <td><button class="btn btn-delete" data-row="${rowIndex}" data-tier="${tierIndex}">🗑️</button></td>
-            `;
-            tableBody.appendChild(tr);
-        });
+    orderRuleConfig.forEach((row, rowIndex) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" value="${row.country}" data-row="${rowIndex}" data-field="country" class="rule-input" style="width:100%"></td>
+            <td><input type="text" value="${row.items}" data-row="${rowIndex}" data-field="items" class="rule-input" style="width:100%" placeholder="4060*3, 3040*2"></td>
+            <td><input type="text" value="${row.channel}" data-row="${rowIndex}" data-field="channel" class="rule-input" style="width:100%" placeholder="!排除特定渠道 或 留空"></td>
+            <td><input type="number" step="0.01" min="0" value="${row.price}" data-row="${rowIndex}" data-field="price" class="rule-input" style="width:80px;"></td>
+            <td><button class="btn btn-delete" data-row="${rowIndex}">🗑️</button></td>
+        `;
+        tableBody.appendChild(tr);
     });
-    // 绑定事件
-    document.querySelectorAll('.price-input').forEach(input => {
+    
+    document.querySelectorAll('.rule-input').forEach(input => {
         input.addEventListener('change', handleInputChange);
     });
     document.querySelectorAll('.btn-delete').forEach(btn => {
@@ -64,42 +53,51 @@ function handleInputChange(e) {
     const field = el.getAttribute('data-field');
     const val = el.value;
     
-    if (field === 'item' || field === 'size') {
-        priceConfig[rowIndex][field] = val;
-        // 同步修改所有同组合的商品名称和尺码
-        renderTable(); 
+    if (field === 'price') {
+        orderRuleConfig[rowIndex][field] = parseFloat(val) || 0;
     } else {
-        const tierIndex = parseInt(el.getAttribute('data-tier'));
-        priceConfig[rowIndex].tiers[tierIndex][field] = parseFloat(val);
+        orderRuleConfig[rowIndex][field] = val;
     }
+    saveConfigToLocal();
 }
 
 function handleDeleteRow(e) {
     const el = e.target.closest('button');
     const rowIndex = parseInt(el.getAttribute('data-row'));
-    const tierIndex = parseInt(el.getAttribute('data-tier'));
-    
-    priceConfig[rowIndex].tiers.splice(tierIndex, 1);
-    if (priceConfig[rowIndex].tiers.length === 0) {
-        priceConfig.splice(rowIndex, 1);
-    }
+    orderRuleConfig.splice(rowIndex, 1);
+    saveConfigToLocal();
     renderTable();
 }
 
 document.getElementById('add-row-btn').addEventListener('click', () => {
-    priceConfig.push({ item: '新商品', size: '默认', tiers: [{qty: 1, price: 0.0}]});
+    orderRuleConfig.push({ country: '', items: '', channel: '', price: 0.0 });
+    saveConfigToLocal();
     renderTable();
 });
 
 document.getElementById('reset-default-btn').addEventListener('click', () => {
-    if(confirm("确定要恢复默认价格表吗？当前修改将会丢失。")) {
-        priceConfig = JSON.parse(JSON.stringify(defaultPriceData));
+    if(confirm("确定要恢复默认规则表吗？当前修改将会丢失。")) {
+        orderRuleConfig = JSON.parse(JSON.stringify(defaultRuleData));
+        saveConfigToLocal();
         renderTable();
     }
 });
 
+function saveConfigToLocal() {
+    localStorage.setItem('ecommerce_order_rules', JSON.stringify(orderRuleConfig));
+}
+
 // 初始化数据
-priceConfig = JSON.parse(JSON.stringify(defaultPriceData));
+const savedConfig = localStorage.getItem('ecommerce_order_rules');
+if (savedConfig) {
+    try {
+        orderRuleConfig = JSON.parse(savedConfig);
+    } catch (e) {
+        orderRuleConfig = JSON.parse(JSON.stringify(defaultRuleData));
+    }
+} else {
+    orderRuleConfig = JSON.parse(JSON.stringify(defaultRuleData));
+}
 renderTable();
 
 // --- 文件上传逻辑 ---
@@ -149,18 +147,29 @@ function updateFileList() {
     downloadBtn.style.display = 'none';
 }
 
-// --- 核心业务逻辑 (原 process_app.py + verify_app.py) ---
+// --- 核心业务逻辑 (基于订单整单匹配) ---
 
-function getPriceDictionary() {
-    // 转换UI配置为后端容易查找的字典图
-    const dict = {};
-    priceConfig.forEach(row => {
-        const key = `${row.item.trim()}|${row.size.trim()}`;
-        // 确保降序排列
-        const sortedTiers = [...row.tiers].sort((a,b) => b.qty - a.qty);
-        dict[key] = sortedTiers;
+// 解析 UI 中的 "4060*3, 3040*2" 为 Map 结构
+function parseItemsToMap(itemStr) {
+    const map = {};
+    if (!itemStr) return map;
+    const parts = String(itemStr).split(/,|，/);
+    parts.forEach(p => {
+        p = p.trim();
+        if (!p) return;
+        
+        // 匹配末尾的 *数量 或 x数量，防止商品名中自带 x 字母被错误截断
+        const match = p.match(/(.+?)\s*(?:\*|x|X|×)\s*(\d+)$/i);
+        if (match) {
+            const name = match[1].trim();
+            const qty = parseInt(match[2]);
+            map[name] = (map[name] || 0) + qty;
+        } else {
+            // 如果只有商品名没有写数量，默认计为 1
+            map[p] = (map[p] || 0) + 1;
+        }
     });
-    return dict;
+    return map;
 }
 
 // 解析单元格值
@@ -169,11 +178,9 @@ function safeStr(val) {
     return String(val).trim();
 }
 
-// 模拟 pandas 读取并清理表头
 function readExcelData(workbook) {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    // 读取为 JSON，并将所有键转为字符串并去除空格
     const rawJson = XLSX.utils.sheet_to_json(worksheet, {defval: ''});
     return rawJson.map(row => {
         const cleanRow = {};
@@ -184,182 +191,263 @@ function readExcelData(workbook) {
     });
 }
 
-function processDataAndVerify(data, fileName, priceDict) {
+// Map 深度对比判断 (A 和 B 的 key 和 value 必须一模一样，或者模糊匹配？暂时要求准确匹配汇总出的商品)
+function isItemMapMatch(orderMap, ruleMap) {
+    const orderKeys = Object.keys(orderMap);
+    const ruleKeys = Object.keys(ruleMap);
+    
+    // 如果订单里面有别的商品，或者缺少商品，直接返回false (严格匹配)
+    if (orderKeys.length !== ruleKeys.length) return false;
+    
+    for (let k of ruleKeys) {
+        // 先尝试精确匹配
+        if (orderMap[k] !== ruleMap[k]) {
+            // 如果精确匹配失败，由于原系统允许名字带有附加字符，我们可以做一个非常鲁棒的包含判定
+            let foundMatch = false;
+            for(let ok of orderKeys) {
+                if(ok.includes(k) && orderMap[ok] === ruleMap[k]) {
+                    foundMatch = true;
+                    break;
+                }
+            }
+            if (!foundMatch) return false;
+        }
+    }
+    return true;
+}
+
+// 获取单行的核心字段处理
+function preprocessRow(row) {
+    let name = safeStr(row['订单商品名称']);
+    if (name === '' || name.toLowerCase() === 'nan') {
+        const skuAttr = safeStr(row['平台SKU多属性']);
+        if (skuAttr.includes(';')) {
+            name = skuAttr.substring(0, skuAttr.lastIndexOf(';')).trim();
+        } else {
+            name = skuAttr;
+        }
+    }
+    row['最终商品名称'] = name;
+    
+    // 尺码
+    const skuAttr2 = safeStr(row['平台SKU多属性']);
+    if (skuAttr2.includes(';')) {
+        row['最终尺码'] = skuAttr2.split(';').pop().trim();
+    } else {
+        row['最终尺码'] = '默认';
+    }
+    
+    row['解析数量'] = parseFloat(row['商品数量']) || 0;
+}
+
+function processDataAndVerify(data, fileName) {
     let allPassed = true;
     let origRowCount = data.length;
-    let origQtySum = data.reduce((sum, row) => sum + (parseFloat(row['商品数量']) || 0), 0);
+    let origQtySum = 0;
     
     log(`\n📊 正在处理并比对: [${fileName}]`);
     
-    // 1. 提取尺码
-    data.forEach(row => {
-        const skuAttr = safeStr(row['平台SKU多属性']);
-        if (skuAttr.includes(';')) {
-            row['尺码'] = skuAttr.split(';').pop().trim();
-        } else {
-            row['尺码'] = '默认';
-        }
-    });
-    
-    // 2. 智能填补商品名称
-    data.forEach(row => {
-        let name = safeStr(row['订单商品名称']);
-        if (name === '' || name.toLowerCase() === 'nan') {
-            const skuAttr = safeStr(row['平台SKU多属性']);
-            if (skuAttr.includes(';')) {
-                row['订单商品名称'] = skuAttr.substring(0, skuAttr.lastIndexOf(';')).trim();
-            } else {
-                row['订单商品名称'] = skuAttr;
-            }
-        }
-    });
-    
-    // 3. 计算本订单单品总数 GroupBy(交易编号, 订单商品名称, 尺码)
-    const orderItemQtyMap = {};
-    data.forEach(row => {
-        const qty = parseFloat(row['商品数量']) || 0;
-        row['商品数量计算'] = qty; // 持久化数字格式
-        const key = `${safeStr(row['交易编号'])}_${safeStr(row['订单商品名称'])}_${safeStr(row['尺码'])}`;
-        orderItemQtyMap[key] = (orderItemQtyMap[key] || 0) + qty;
-    });
-    
-    // 4. 匹配价格并计算结果
-    let zeroPriceCount = 0;
-    let mathErrorCount = 0;
+    // --- 1. 按订单聚合并清洗数据 ---
+    const orderGroups = {}; // { '交易编号_客户姓名' : {rows: [], country: '', channel: '', itemsMap: {}} }
     
     data.forEach(row => {
-        const item = safeStr(row['订单商品名称']);
-        const size = safeStr(row['尺码']);
-        const orderKey = `${safeStr(row['交易编号'])}_${item}_${size}`;
-        const totalQtyInOrder = orderItemQtyMap[orderKey] || 0;
+        preprocessRow(row);
+        origQtySum += row['解析数量'];
         
-        let matchedTiers = null;
-        const exactKey = `${item}|${size}`;
-        
-        if (priceDict[exactKey]) {
-            matchedTiers = priceDict[exactKey];
-        } else {
-            // 模糊匹配
-            for (let k in priceDict) {
-                const [dictItem, dictSize] = k.split('|');
-                if (item.includes(dictItem)) {
-                    matchedTiers = priceDict[k];
-                    break;
-                }
-            }
+        const optKey = `${safeStr(row['交易编号'])}|||${safeStr(row['客户姓名'])}`;
+        if (!orderGroups[optKey]) {
+            orderGroups[optKey] = {
+                rows: [],
+                country: safeStr(row['国家']),
+                channel: safeStr(row['物流渠道']),
+                itemsMap: {},
+                matchedPrice: 0,
+                isMatched: false
+            };
         }
         
-        let unitPrice = 0.0;
-        if (matchedTiers) {
-            for (let t of matchedTiers) {
-                if (totalQtyInOrder >= t.qty) {
-                    unitPrice = t.price;
-                    break;
-                }
-            }
-        }
+        orderGroups[optKey].rows.push(row);
         
-        row['单价'] = unitPrice;
-        row['商品总价'] = Math.round(unitPrice * row['商品数量计算'] * 100) / 100;
-        
-        if (unitPrice === 0) zeroPriceCount++;
+        const itemName = row['最终商品名称'];
+        orderGroups[optKey].itemsMap[itemName] = (orderGroups[optKey].itemsMap[itemName] || 0) + row['解析数量'];
     });
-
-    // 验证逻辑
-    let detailQtySum = 0;
+    
+    // --- 2. 基于配置表进行订单级规则匹配 ---
+    // 预解析规则
+    const parsedRules = orderRuleConfig.map(r => ({
+        country: safeStr(r.country).toLowerCase(),
+        itemsMap: parseItemsToMap(r.items),
+        channel: safeStr(r.channel).trim(),
+        price: r.price
+    }));
+    
+    let unmatchedOrders = [];
     let detailMoneySum = 0;
     
-    const orderSumMap = {}; // 按交易编号，客户姓名 汇总
-    const skuSumMap = {};   // 按 订单商品名称, 尺码 汇总
-    
-    data.forEach(row => {
-        detailQtySum += row['商品数量计算'];
-        detailMoneySum += row['商品总价'];
+    for (let key in orderGroups) {
+        const order = orderGroups[key];
+        const ordCountry = order.country.toLowerCase();
+        const ordChannel = order.channel;
         
-        // 订单汇总
-        const optKey = `${safeStr(row['交易编号'])}|||${safeStr(row['客户姓名'])}`;
-        if(!orderSumMap[optKey]) orderSumMap[optKey] = {qty: 0, money: 0};
-        orderSumMap[optKey].qty += row['商品数量计算'];
-        orderSumMap[optKey].money += row['商品总价'];
+        let matchFound = false;
         
-        // SKU汇总
-        const skuKey = `${safeStr(row['订单商品名称'])}|||${safeStr(row['尺码'])}`;
-        if(!skuSumMap[skuKey]) skuSumMap[skuKey] = {qty: 0, money: 0};
-        skuSumMap[skuKey].qty += row['商品数量计算'];
-        skuSumMap[skuKey].money += row['商品总价'];
-    });
+        for (let rule of parsedRules) {
+            // A. 国家匹配
+            if (rule.country && ordCountry !== rule.country) continue;
+            
+            // B. 物流渠道匹配
+            if (rule.channel && rule.channel !== '*' && rule.channel !== '') {
+                if (rule.channel.startsWith('!')) {
+                    const excluded = rule.channel.substring(1).trim();
+                    if (ordChannel === excluded) continue; // 属于排除渠道，本规则不通过
+                } else if (rule.channel !== ordChannel) {
+                    continue; // 指定渠道不相等
+                }
+            }
+            
+            // C. 商品组合精确匹配
+            if (!isItemMapMatch(order.itemsMap, rule.itemsMap)) {
+                continue;
+            }
+            
+            // 全部条件达成！
+            order.isMatched = true;
+            order.matchedPrice = rule.price;
+            matchFound = true;
+            break; 
+        }
+        
+        if (!matchFound) {
+            unmatchedOrders.push({
+                key: key,
+                country: order.country,
+                items: JSON.stringify(order.itemsMap)
+            });
+        }
+        
+        detailMoneySum += order.matchedPrice;
+        
+        // --- 3. 将最终结果下卷到 Excel 的每一行 (展示用) ---
+        let isFirstRow = true;
+        order.rows.forEach(r => {
+            // 为了保证明细表的金额汇总不出错，总额只挂在订单的第一行，其余行记录为0，或者可以展示一个总括说明。
+            // 我们选择加一个专列 [本单核对手续费]
+            if(isFirstRow) {
+                r['本单最终匹配总价'] = order.matchedPrice;
+                isFirstRow = false;
+            } else {
+                r['本单最终匹配总价'] = 0; // 其余行为0，避免表格直接求和时重复累计
+            }
+            r['整单状态'] = matchFound ? '成功匹配' : '查无此规则';
+        });
+    }
     
-    // 生成表2数据
+    // --- 4. 生成三个维度的工作表 ---
+    // 表1: 明细
+    // 已在上面赋予 data
+    
+    // 表2: 按订单汇总
     const orderSummary = [];
     let orderQtySum = 0, orderMoneySum = 0;
-    for(let k in orderSumMap) {
-        const parts = k.split('|||');
+    
+    for (let k in orderGroups) {
+        const order = orderGroups[k];
+        const parts = k.split('|||'); // 交易编号 ||| 客户姓名
+        
+        // 算出这个订单的总商品数量
+        let tQty = 0;
+        for(let item in order.itemsMap) { tQty += order.itemsMap[item]; }
+        
+        // 把商品 map 转化为直观的文字描述
+        let itemsDesc = [];
+        for(let item in order.itemsMap) { itemsDesc.push(`${item}*${order.itemsMap[item]}`); }
+        
         orderSummary.push({
             '交易编号': parts[0],
             '客户姓名': parts[1],
-            '总商品数量': orderSumMap[k].qty,
-            '订单总金额': Math.round(orderSumMap[k].money*100)/100
+            '国家': order.country,
+            '物流渠道': order.channel,
+            '包含商品': itemsDesc.join(', '),
+            '总商品数量': tQty,
+            '订单最终总价': order.matchedPrice
         });
-        orderQtySum += orderSumMap[k].qty;
-        orderMoneySum += orderSumMap[k].money;
+        orderQtySum += tQty;
+        orderMoneySum += order.matchedPrice;
     }
     
-    // 生成表3数据
-    const itemSummary = [];
-    let itemQtySum = 0, itemMoneySum = 0;
+    // 表3: SKU销量汇总 (由于现在是整单计价，无法准确拆分单品销售额，只能汇总销量)
+    const skuSummary = [];
+    const skuSumMap = {}; 
+    data.forEach(row => {
+        const skuKey = `${row['最终商品名称']}|||${row['最终尺码']}`;
+        if (!skuSumMap[skuKey]) skuSumMap[skuKey] = 0;
+        skuSumMap[skuKey] += row['解析数量'];
+    });
+    
+    let itemQtySum = 0;
     for(let k in skuSumMap) {
         const parts = k.split('|||');
-        itemSummary.push({
+        skuSummary.push({
             '订单商品名称': parts[0],
             '尺码': parts[1],
-            '总销量': skuSumMap[k].qty,
-            '总销售额': Math.round(skuSumMap[k].money*100)/100
+            '总销量': skuSumMap[k]
         });
-        itemQtySum += skuSumMap[k].qty;
-        itemMoneySum += skuSumMap[k].money;
+        itemQtySum += skuSumMap[k];
     }
-    // 表3按金额降序
-    itemSummary.sort((a,b) => b['总销售额'] - a['总销售额']);
+    skuSummary.sort((a,b) => b['总销量'] - a['总销量']);
     
-    // --- 执行严苛对账逻辑 ---
     
+    // --- 5. 严苛对账执行 ---
     if (origRowCount !== data.length) {
-        log(`   ❌ 源头警报！数据行数丢失：原始表(${origRowCount}行) vs 结果表(${data.length}行)！`, 'log-error');
+        log(`   ❌ 致命警报！数据行丢失：原始(${origRowCount}) vs 处理(${data.length})！`, 'log-error');
         allPassed = false;
     }
-    if (Math.abs(origQtySum - detailQtySum) > 0.01) {
-        log(`   ❌ 源头警报！商品总件数不匹配：原始表进了(${origQtySum}件) vs 结果表只出来(${detailQtySum}件)！`, 'log-error');
-        allPassed = false;
-    }
-    
-    if (zeroPriceCount > 0) {
-        log(`   ❌ 价格警报！发现 ${zeroPriceCount} 条商品单价为 0 的记录（未匹配到字典价格）`, 'log-error');
+    if (Math.abs(origQtySum - orderQtySum) > 0.01) {
+        log(`   ❌ 源头警报！商品总件数不匹配：原始表进了(${origQtySum}件) vs 订单结果只出来(${orderQtySum}件)！`, 'log-error');
         allPassed = false;
     }
     
-    if (Math.abs(detailQtySum - orderQtySum) > 0.01 || Math.abs(detailQtySum - itemQtySum) > 0.01) {
-        log(`   ❌ 汇总警报！内部商品总数对不上：明细(${detailQtySum}) vs 订单(${orderQtySum}) vs SKU(${itemQtySum})`, 'log-error');
+    // 对比表1的金额累计(只加第一行)和表2的金额累计是否相等
+    let detailMoneyRealSum = data.reduce((sum, r) => sum + (r['本单最终匹配总价'] || 0), 0);
+    if (Math.abs(detailMoneyRealSum - orderMoneySum) > 0.01) {
+        log(`   ❌ 汇总警报！内部金额求和对不上：明细表汇总(${detailMoneyRealSum}) vs 订单表汇总(${orderMoneySum})`, 'log-error');
         allPassed = false;
     }
     
-    if (Math.abs(detailMoneySum - orderMoneySum) > 0.02 || Math.abs(detailMoneySum - itemMoneySum) > 0.02) {
-        log(`   ❌ 汇总警报！内部总金额对不上：明细(${detailMoneySum}) vs 订单(${orderMoneySum}) vs SKU(${itemMoneySum})`, 'log-error');
+    // 报告未匹配订单详情
+    if (unmatchedOrders.length > 0) {
         allPassed = false;
+        log(`   ❌ 规则匹配警报！发现 ${unmatchedOrders.length} 个订单未匹配到任何定价规则：`, 'log-error');
+        // 最多展示 10 条，避免刷屏
+        unmatchedOrders.slice(0, 10).forEach(uo => {
+            const parts = uo.key.split('|||');
+            log(`      - 交易编号: ${parts[0]} | 客户: ${parts[1]} | 国家: ${uo.country} | 包含: ${uo.items}`, 'log-error');
+        });
+        if (unmatchedOrders.length > 10) {
+            log(`      ... (等共计 ${unmatchedOrders.length} 条未匹配记录)`, 'log-error');
+        }
     }
     
     if (allPassed) {
-        log(`   ✅ 源文件无缝对接，内部对账无误！完美匹配流水: ¥${detailMoneySum.toFixed(2)}`, 'log-success');
+        log(`   ✅ 源文件无缝对接，全部规则识别成功！本表完美结账流水: ¥${orderMoneySum.toFixed(2)}`, 'log-success');
     } else {
-        log(`   ⚠️ 该表比对未通过，请仔细核查报错！`, 'log-warning');
+        log(`   ⚠️ 该表对账未通过，请检查上方【规则匹配警报】提示的客户订单配置！`, 'log-warning');
     }
     log(`--------------------------------------------------`, 'log-info');
+
+    // 格式化输出的表头和多余列清理
+    data.forEach(r => {
+        delete r['最终商品名称'];
+        delete r['最终尺码'];
+        delete r['解析数量'];
+    });
 
     return {
         passed: allPassed,
         sheets: {
             '添加价格后的明细': data,
             '按订单汇总': orderSummary,
-            '按商品SKU汇总': itemSummary
+            'SKU总销量统计': skuSummary
         }
     };
 }
@@ -374,9 +462,8 @@ function exportExcelAndZip(results) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.sheets['添加价格后的明细']), '添加价格后的明细');
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.sheets['按订单汇总']), '按订单汇总');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.sheets['按商品SKU汇总']), '按商品SKU汇总');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.sheets['SKU总销量统计']), 'SKU总销量统计');
         
-        // 导出为 ArrayBuffer
         const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
         
         const extIndex = res.fileName.lastIndexOf('.');
@@ -385,9 +472,9 @@ function exportExcelAndZip(results) {
     });
     
     if (isGlobalSuccess) {
-        log(`\n🎉 恭喜！所有表格的全链路对账全部通过：零漏单、零丢行、零错算！安全可靠！`, 'log-success');
+        log(`\n🎉 恭喜！所有表格全链路对账通过，全部订单精准匹配到规则！`, 'log-success');
     } else {
-        log(`\n🚨 注意：发现部分数据源与结果不匹配或存在内部错误（未找到单价等），请仔细查阅上述日志！打包仍将进行。`, 'log-warning');
+        log(`\n🚨 注意：存在未匹配到规则价格的“漏网”订单，请在日志中核对这些【交易编号】！打包仍将进行。`, 'log-warning');
     }
     
     return zip;
@@ -398,9 +485,8 @@ startBtn.addEventListener('click', async () => {
     startBtn.disabled = true;
     startBtn.innerText = '⚡ 处理中...';
     clearLog();
-    log('⚡ 纯本地 JS 引擎启动，开始处理...', 'log-info');
+    log('⚡ 整单匹配智能引擎启动中...', 'log-info');
     
-    const priceDict = getPriceDictionary();
     const finalResults = [];
     
     try {
@@ -418,7 +504,7 @@ startBtn.addEventListener('click', async () => {
                 reader.readAsArrayBuffer(file);
             });
             
-            const processed = processDataAndVerify(data, file.name, priceDict);
+            const processed = processDataAndVerify(data, file.name);
             processed.fileName = file.name;
             finalResults.push(processed);
         }
@@ -440,6 +526,6 @@ startBtn.addEventListener('click', async () => {
 
 downloadBtn.addEventListener('click', () => {
     if (processedZips) {
-        saveAs(processedZips, "电商订单财务对账结果_Web.zip");
+        saveAs(processedZips, "规则匹配版_订单对账结果.zip");
     }
 });
