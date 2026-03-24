@@ -76,11 +76,62 @@ document.getElementById('add-row-btn').addEventListener('click', () => {
 });
 
 document.getElementById('reset-default-btn').addEventListener('click', () => {
-    if(confirm("确定要恢复默认规则表吗？当前修改将会丢失。")) {
+    if(confirm("确定要清空并恢复默认规则表吗？当前修改将会全部丢失。")) {
         orderRuleConfig = JSON.parse(JSON.stringify(defaultRuleData));
         saveConfigToLocal();
         renderTable();
     }
+});
+
+// --- 规则表 Excel 导入逻辑 ---
+const importRulesInput = document.getElementById('import-rules-input');
+importRulesInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const wb = XLSX.read(event.target.result, {type: 'array'});
+            const sheetName = wb.SheetNames[0];
+            const worksheet = wb.Sheets[sheetName];
+            const rawJson = XLSX.utils.sheet_to_json(worksheet, {defval: ''});
+            
+            let newRules = [];
+            rawJson.forEach(row => {
+                const cleanRow = {};
+                for(let k in row) {
+                    cleanRow[k.trim()] = row[k];
+                }
+                
+                const country = safeStr(cleanRow['国家'] || cleanRow['Country'] || '');
+                const items = safeStr(cleanRow['包含商品及数量'] || cleanRow['包含商品和数量'] || cleanRow['商品及数量'] || cleanRow['包含商品'] || '');
+                const channel = safeStr(cleanRow['物流渠道'] || cleanRow['Channel'] || '');
+                const price = parseFloat(cleanRow['整单总价'] || cleanRow['一口价'] || cleanRow['价格'] || cleanRow['总价']) || 0.0;
+                
+                if (items || country) {
+                    newRules.push({ country, items, channel, price });
+                }
+            });
+            
+            if (newRules.length > 0) {
+                if(confirm(`成功读取 ${newRules.length} 条规则！\n\n点击【确定】将覆盖当前界面的所有规则。\n点击【取消】将追加到当前列表末尾。`)) {
+                    orderRuleConfig = newRules;
+                } else {
+                    orderRuleConfig = orderRuleConfig.concat(newRules);
+                }
+                saveConfigToLocal();
+                renderTable();
+                log(`✅ 已成功导入 ${newRules.length} 条价格规则`, 'log-success');
+            } else {
+                alert("未在表格中读取到有效规则！请确保Excel至少包含列名：'国家', '包含商品及数量', '物流渠道', '整单总价'。");
+            }
+        } catch (err) {
+            alert("读取 Excel 配置表失败：" + err.message);
+        }
+        importRulesInput.value = '';
+    };
+    reader.readAsArrayBuffer(file);
 });
 
 function saveConfigToLocal() {
