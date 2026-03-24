@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电商对账管家 Pro (Web版)</title>
+    <!-- 引入必要的库 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- 自定义样式 -->
+    <link rel="stylesheet" href="style.css">
+    <!-- 字体图标 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏：配置中心 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>⚙️ 配置中心</h2>
+                <p>修改价格表，实时生效</p>
+            </div>
+            
+            <div class="table-actions">
+                <button id="add-row-btn" class="btn btn-small btn-outline">+ 添加价格行</button>
+                <button id="reset-default-btn" class="btn btn-small btn-text">🔄 恢复默认</button>
+            </div>
+
+            <div class="price-table-container">
+                <table id="price-config-table">
+                    <thead>
+                        <tr>
+                            <th>商品名称</th>
+                            <th>尺码</th>
+                            <th>起售量</th>
+                            <th>单价</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="price-table-body">
+                        <!-- 动态生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="main-title">📊 电商订单自动算价与对账系统</h1>
+                <p class="subtitle">纯本地高速处理 · 告别手动算账 · 一键阶梯计价与财务核销</p>
+                <hr class="divider">
+            </header>
+
+            <div class="actions-grid">
+                <!-- 步骤 1：上传文件 -->
+                <div class="card step-card">
+                    <h3>📥 第一步：上传订单</h3>
+                    <div class="upload-area" id="drop-zone">
+                        <input type="file" id="file-input" class="hidden-input" multiple accept=".xls,.xlsx" />
+                        <div class="upload-content">
+                            <span class="upload-icon">📁</span>
+                            <p>点击或拖拽 Excel 表格到此处</p>
+                            <span class="file-count" id="file-count-badge">未选择文件</span>
+                        </div>
+                    </div>
+                    <ul id="file-list" class="file-list"></ul>
+                </div>
+
+                <!-- 步骤 2：处理流 -->
+                <div class="card step-card">
+                    <h3>🎯 第二步：确认处理</h3>
+                    <p class="warning-text">⚠️ 请确保左侧价格表已填写完毕。系统将在浏览器内进行全链路对账。</p>
+                    <div class="process-actions">
+                        <button id="start-process-btn" class="btn btn-primary btn-large" disabled>🚀 开始自动化处理</button>
+                        <button id="download-btn" class="btn btn-success btn-large" style="display: none;">📥 下载对账结果 (ZIP)</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 步骤 3：日志终端 -->
+            <div class="card log-card">
+                <h3>⚙️ 第三步：运行状态监控</h3>
+                <div class="log-terminal" id="log-terminal">
+                    <pre id="log-content">等待指示...\n</pre>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 自定义逻辑 -->
+    <script src="app.js"></script>
+</body>
+</html>
