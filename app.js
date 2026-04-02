@@ -333,7 +333,7 @@ self.onmessage = async function(e) {
     }
 };
 
-// --- 重构的智能表头读取逻辑 (Fuzzy Headers) ---
+// --- 重构的智能表头读取逻辑 (Fuzzy Headers + 内容嗅探回退) ---
 function readExcelDataWithFuzzyHeaders(workbook) {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -341,7 +341,9 @@ function readExcelDataWithFuzzyHeaders(workbook) {
     if (rawJson.length === 0) return [];
     
     const headers = rawJson[0] || [];
-    const headerMap = {}; 
+    const headerMap = {};
+    // 记录每个标准列名匹配到的列索引，用于嗅探回退时排除已识别的列
+    const headerIndexMap = {};
     
     const aliasMap = {
         '交易编号': ['交易编号', '订单号', '订单编号', 'transaction id', 'order id'],
@@ -353,6 +355,7 @@ function readExcelDataWithFuzzyHeaders(workbook) {
         '物流渠道': ['物流渠道', '发货方式', '指定发货方式', 'shipping method', 'logistics']
     };
     
+    // 第一步：标准表头别名匹配
     headers.forEach((h, idx) => {
         if (!h) return;
         const lowerH = String(h).trim().toLowerCase();
@@ -360,20 +363,95 @@ function readExcelDataWithFuzzyHeaders(workbook) {
             if (aliasMap[standardKey].some(alias => lowerH.includes(alias) || alias === lowerH)) {
                 if (!headerMap[standardKey]) {
                     headerMap[standardKey] = h;
+                    headerIndexMap[standardKey] = idx;
                 }
             }
         }
     });
 
+    // ====================================================================
+    // 第二步：物流渠道列的「内容嗅探」回退机制
+    // 当表头行缺少"物流渠道"标识时，通过扫描数据行的实际内容来智能识别
+    // ====================================================================
+    if (!headerMap['物流渠道'] && rawJson.length > 1) {
+        logMain('   ⚠️ 未从表头识别到【物流渠道】列，启动内容嗅探回退...', 'log-warning');
+        
+        // 物流渠道数据中常见的关键词特征库
+        const channelKeywords = [
+            '自提客选', '专线', '快递', '物流', '邮政', '平邮', '挂号',
+            'ems', 'dhl', 'fedex', 'ups', 'tnt', 'dpd', 'gls',
+            'yun', 'express', 'post', 'shipping', 'poczta',
+            '铁路', '空运', '海运', '陆运', '卡航'
+        ];
+        
+        // 已被其它字段占用的列索引集合，嗅探时跳过
+        const usedColIndexes = new Set(Object.values(headerIndexMap));
+        
+        // 抽样扫描前20行数据（跳过表头行），统计每列的关键词命中次数
+        const sampleRows = rawJson.slice(1, Math.min(21, rawJson.length));
+        let bestColIdx = -1;
+        let bestHitCount = 0;
+        
+        for (let colIdx = 0; colIdx < headers.length; colIdx++) {
+            if (usedColIndexes.has(colIdx)) continue; // 跳过已识别的列
+            
+            let hitCount = 0;
+            for (let sRow of sampleRows) {
+                const cellVal = String(sRow[colIdx] || '').trim().toLowerCase();
+                if (!cellVal) continue;
+                // 只要单元格内容包含任一物流关键词即视为命中
+                if (channelKeywords.some(kw => cellVal.includes(kw))) {
+                    hitCount++;
+                }
+            }
+            // 选择命中率最高的列作为物流渠道列
+            if (hitCount > bestHitCount) {
+                bestHitCount = hitCount;
+                bestColIdx = colIdx;
+            }
+        }
+        
+        // 至少有2行数据命中关键词才认定（防止误判）
+        if (bestColIdx >= 0 && bestHitCount >= 2) {
+            // 使用该列原始表头（即使是空字符串或第一行数据值）作为映射键
+            const detectedHeader = headers[bestColIdx];
+            // 如果表头为空，则该列第一行数据被 sheet_to_json 当成了表头
+            // 此时直接用列索引映射的方式处理
+            headerMap['物流渠道'] = detectedHeader;
+            headerIndexMap['物流渠道'] = bestColIdx;
+            logMain(\`   ✅ 内容嗅探成功！第 \${bestColIdx + 1} 列 (表头: "\${detectedHeader || '(空)'}") 被识别为物流渠道 (命中 \${bestHitCount}/\${sampleRows.length} 行)\`, 'log-success');
+            logMain(\`   💡 建议：请在 Excel 表头中补上"物流渠道"以避免该提示\`, 'log-warning');
+        } else {
+            logMain(\`   ⚠️ 内容嗅探未能定位物流渠道列 (最高命中仅 \${bestHitCount} 行)，该文件的物流渠道将为空，可能影响自提客选判断！\`, 'log-error');
+        }
+    }
+
+    // ====================================================================
+    // 第三步：将工作表数据映射为标准字段
+    // 如果物流渠道是通过嗅探发现的，且原表头为空（被 sheet_to_json 跳过），
+    // 则需要使用备用的按列索引提取方式
+    // ====================================================================
+    const channelColIdx = headerIndexMap['物流渠道'];
+    const channelHeaderName = headerMap['物流渠道'];
+    // 判断是否需要按列索引回退提取（表头为空或第一行数据值被当成表头时）
+    const needIndexFallback = (channelColIdx !== undefined) && (!channelHeaderName && channelHeaderName !== 0);
+    
     const dataJson = XLSX.utils.sheet_to_json(worksheet, {defval: ''});
-    return dataJson.map(row => {
+    return dataJson.map((row, rowIdx) => {
         const cleanRow = {};
         for(let k in row) { cleanRow[k.trim()] = row[k]; }
         
         const mappedRow = {};
         for (let standardKey in aliasMap) {
-            const originalCol = headerMap[standardKey];
-            mappedRow[standardKey] = originalCol ? cleanRow[originalCol] : '';
+            if (standardKey === '物流渠道' && needIndexFallback) {
+                // 表头为空时 sheet_to_json 可能将第一行数据值当表头，
+                // 此处使用原始数组按列索引取值（+1 跳过表头行）
+                const rawDataRow = rawJson[rowIdx + 1];
+                mappedRow[standardKey] = rawDataRow ? String(rawDataRow[channelColIdx] || '').trim() : '';
+            } else {
+                const originalCol = headerMap[standardKey];
+                mappedRow[standardKey] = originalCol ? (cleanRow[originalCol] !== undefined ? cleanRow[originalCol] : '') : '';
+            }
         }
         return mappedRow;
     });
