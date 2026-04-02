@@ -527,12 +527,36 @@ function processDataAndVerify(data, fileName, orderRuleConfig) {
     
     logMain(\`\\n📊 正在后台处理并比对: [\${fileName}]\`);
     
+    // ======== 新增校验：关键字段缺失 & 商品数量异常 ========
+    let missingFieldRows = [];   // 交易编号或客户姓名为空的行号
+    let badQtyRows = [];         // 商品数量 ≤ 0 的行号
+    
     const orderGroups = {}; 
-    data.forEach(row => {
+    data.forEach((row, rowIndex) => {
         preprocessRow(row);
         origQtySum += row['解析数量'];
         
-        const optKey = \`\${safeStr(row['交易编号'])}|||\${safeStr(row['客户姓名'])}\`;
+        // P0校验：关键字段缺失检测
+        const txId = safeStr(row['交易编号']);
+        const custName = safeStr(row['客户姓名']);
+        if (!txId || !custName) {
+            missingFieldRows.push({
+                line: rowIndex + 2,  // +2: 跳过表头行 + 0-indexed转1-indexed
+                txId: txId || '(空)',
+                custName: custName || '(空)'
+            });
+        }
+        
+        // P2校验：商品数量异常值检测（0 或 负数）
+        if (row['解析数量'] <= 0) {
+            badQtyRows.push({
+                line: rowIndex + 2,
+                txId: txId || '(空)',
+                qty: row['商品数量']
+            });
+        }
+        
+        const optKey = \`\${txId}|||\${custName}\`;
         if (!orderGroups[optKey]) {
             orderGroups[optKey] = {
                 rows: [], country: safeStr(row['国家']), channel: safeStr(row['物流渠道']),
@@ -543,6 +567,26 @@ function processDataAndVerify(data, fileName, orderRuleConfig) {
         const itemName = row['最终商品名称'];
         orderGroups[optKey].itemsMap[itemName] = (orderGroups[optKey].itemsMap[itemName] || 0) + row['解析数量'];
     });
+    
+    // 输出关键字段缺失告警
+    if (missingFieldRows.length > 0) {
+        allPassed = false;
+        logMain(\`   ❌ 关键字段缺失！发现 \${missingFieldRows.length} 行的交易编号或客户姓名为空（会导致订单被错误合并）：\`, 'log-error');
+        missingFieldRows.slice(0, 5).forEach(r => {
+            logMain(\`      - 第 \${r.line} 行: 交易编号=\${r.txId}, 客户姓名=\${r.custName}\`, 'log-error');
+        });
+        if (missingFieldRows.length > 5) logMain(\`      ... 等共计 \${missingFieldRows.length} 行\`, 'log-error');
+    }
+    
+    // 输出商品数量异常告警
+    if (badQtyRows.length > 0) {
+        allPassed = false;
+        logMain(\`   ❌ 商品数量异常！发现 \${badQtyRows.length} 行的数量 ≤ 0：\`, 'log-error');
+        badQtyRows.slice(0, 5).forEach(r => {
+            logMain(\`      - 第 \${r.line} 行: 交易编号=\${r.txId}, 原始数量="\${r.qty}"\`, 'log-error');
+        });
+        if (badQtyRows.length > 5) logMain(\`      ... 等共计 \${badQtyRows.length} 行\`, 'log-error');
+    }
     
     const parsedRules = orderRuleConfig.map(r => ({
         country: safeStr(r.country).toLowerCase(),
@@ -572,7 +616,14 @@ function processDataAndVerify(data, fileName, orderRuleConfig) {
             }
             if (!isItemMapMatch(order.itemsMap, rule.itemsMap)) continue;
             
-            order.isMatched = true; order.matchedPrice = rule.price; matchFound = true; break; 
+            order.isMatched = true; order.matchedPrice = rule.price; matchFound = true;
+            
+            // P0校验：零价格规则告警（匹配成功但价格为0，可能是规则表忘记填价格）
+            if (rule.price === 0 || rule.price === null || rule.price === undefined) {
+                const keyParts = key.split('|||');
+                logMain(\`   ⚠️ 零价格规则命中！交易编号: \${keyParts[0]} | 客户: \${keyParts[1]} | 国家: \${ordCountry} | 匹配规则价格为 0，请确认是否正确\`, 'log-warning');
+            }
+            break; 
         }
         
         if (!matchFound) {
@@ -648,6 +699,42 @@ function processDataAndVerify(data, fileName, orderRuleConfig) {
     } else {
         logMain(\`   ✅ 源文件无缝对接，全部规则识别成功！流水: ¥\${orderMoneySum.toFixed(2)}\`, 'log-success');
     }
+    
+    // ======== P0校验：自提客选比例监控 ========
+    // 如果渠道识别全部失败（如表头缺失且嗅探也失败），
+    // 所有订单的渠道会为空，导致自提客选占比 0%，价格全部取错
+    let totalOrders = Object.keys(orderGroups).length;
+    if (totalOrders > 0) {
+        let selfPickupCount = 0;   // 包含"自提客选"的订单数
+        let emptyChannelCount = 0; // 渠道为空的订单数
+        for (let k in orderGroups) {
+            const ch = orderGroups[k].channel;
+            if (!ch) emptyChannelCount++;
+            if (ch.includes('自提客选')) selfPickupCount++;
+        }
+        const selfPickupPct = (selfPickupCount / totalOrders * 100).toFixed(1);
+        const emptyPct = (emptyChannelCount / totalOrders * 100).toFixed(1);
+        
+        // 渠道全部为空 → 物流渠道列很可能没被识别到
+        if (emptyChannelCount === totalOrders) {
+            allPassed = false;
+            logMain(\`   ❌ 渠道异常！全部 \${totalOrders} 个订单的物流渠道均为空，自提客选判断完全失效！请检查 Excel 是否有物流渠道列\`, 'log-error');
+        } else if (emptyChannelCount > 0) {
+            logMain(\`   ⚠️ 渠道提醒：\${emptyChannelCount} 个订单 (\${emptyPct}%) 的物流渠道为空\`, 'log-warning');
+        }
+        
+        // 自提客选 100% 或 0% 且总订单数 > 5 → 可疑，可能渠道识别出了系统性偏差
+        if (totalOrders > 5 && emptyChannelCount < totalOrders) {
+            if (selfPickupCount === 0) {
+                logMain(\`   ⚠️ 比例异常：全部 \${totalOrders} 个订单中没有任何一个包含"自提客选"，请确认渠道数据是否正确\`, 'log-warning');
+            } else if (selfPickupCount === totalOrders) {
+                logMain(\`   ⚠️ 比例异常：全部 \${totalOrders} 个订单都是"自提客选"，请确认渠道数据是否正确\`, 'log-warning');
+            } else {
+                logMain(\`   📊 渠道分布：自提客选 \${selfPickupCount} 单 (\${selfPickupPct}%) / 非自提客选 \${totalOrders - selfPickupCount} 单 (\${(100 - selfPickupPct).toFixed(1)}%)\`, 'log-info');
+            }
+        }
+    }
+    
     logMain(\`--------------------------------------------------\`, 'log-info');
 
     data.forEach(r => { delete r['最终商品名称']; delete r['最终尺码']; delete r['解析数量']; });
