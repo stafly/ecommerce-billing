@@ -123,7 +123,7 @@ function handleInputChange(e) {
     const val = el.value;
     
     if (field === 'price') {
-        orderRuleConfig[rowIndex][field] = parseFloat(val) || 0;
+        orderRuleConfig[rowIndex][field] = parseSafePrice(val);
     } else {
         orderRuleConfig[rowIndex][field] = val;
     }
@@ -156,6 +156,26 @@ function safeStr(val) {
     return String(val).trim();
 }
 
+/**
+ * 修复价格录入错误（如多个连续小数点 10..2，或夹杂非数字字符等）
+ * @param {string|number} val - 原始价格输入
+ * @returns {number} 清洗并解析后的安全浮点数价格
+ */
+function parseSafePrice(val) {
+    if (val === null || val === undefined || val === '') return 0.0;
+    let strVal = String(val).trim();
+    // 替换多个连续小数点为一个
+    strVal = strVal.replace(/\.{2,}/g, '.');
+    // 去除除数字和小数点外的其他非法字符
+    strVal = strVal.replace(/[^\d.]/g, ''); 
+    // 防止形如 10.2.3 的离散多次小数点问题，强制只保留第一个小数点
+    const parts = strVal.split('.');
+    if (parts.length > 2) {
+        strVal = parts[0] + '.' + parts.slice(1).join('');
+    }
+    return parseFloat(strVal) || 0.0;
+}
+
 // --- 规则表 Excel 导入逻辑 ---
 const importRulesInput = document.getElementById('import-rules-input');
 importRulesInput.addEventListener('change', (e) => {
@@ -180,7 +200,7 @@ importRulesInput.addEventListener('change', (e) => {
                 const country = safeStr(cleanRow['国家'] || cleanRow['Country'] || '');
                 const items = safeStr(cleanRow['包含商品及数量'] || cleanRow['包含商品和数量'] || cleanRow['商品及数量'] || cleanRow['包含商品'] || '');
                 const channel = safeStr(cleanRow['物流渠道'] || cleanRow['Channel'] || '');
-                const price = parseFloat(cleanRow['整单总价'] || cleanRow['一口价'] || cleanRow['价格'] || cleanRow['总价']) || 0.0;
+                const price = parseSafePrice(cleanRow['整单总价'] || cleanRow['一口价'] || cleanRow['价格'] || cleanRow['总价']);
                 
                 if (items || country) {
                     newRules.push({ country, items, channel, price });
@@ -466,8 +486,9 @@ function processDataAndVerify(data, fileName, orderRuleConfig) {
             if (rule.country && ordCountry !== rule.country) continue;
             if (rule.channel && rule.channel !== '*' && rule.channel !== '') {
                 if (rule.channel.startsWith('!')) {
-                    if (ordChannel === rule.channel.substring(1).trim()) continue; 
-                } else if (rule.channel !== ordChannel) {
+                    const excludeKeyword = rule.channel.substring(1).trim();
+                    if (ordChannel.includes(excludeKeyword)) continue; 
+                } else if (!ordChannel.includes(rule.channel)) {
                     continue; 
                 }
             }
@@ -483,8 +504,8 @@ function processDataAndVerify(data, fileName, orderRuleConfig) {
             for (let itemName of sortedKeys) {
                 itemsArr.push(\`\${itemName}*\${order.itemsMap[itemName]}\`);
             }
-            // 按照需求严格二分渠道：是"自提客选"的保留，其余统统标记为"!自提客选"
-            let reportChannel = (ordChannel === '自提客选') ? '自提客选' : '!自提客选';
+            // 按照需求模糊匹配渠道：只要包含"自提客选"的保留，其余统统标记为"!自提客选"
+            let reportChannel = ordChannel.includes('自提客选') ? '自提客选' : '!自提客选';
             
             unmatchedOrders.push({
                 transaction: key.split('|||')[0],
