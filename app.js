@@ -151,6 +151,10 @@ document.getElementById('reset-default-btn').addEventListener('click', () => {
         renderTable();
     }
 });
+function safeStr(val) {
+    if (val === null || val === undefined) return '';
+    return String(val).trim();
+}
 
 // --- 规则表 Excel 导入逻辑 ---
 const importRulesInput = document.getElementById('import-rules-input');
